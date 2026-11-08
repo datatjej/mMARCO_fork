@@ -41,7 +41,7 @@ class MSMarco(Dataset):
               doc_lines = nltk.tokenize.sent_tokenize(ftfy.ftfy(line[1]))
               for doc in doc_lines:
                 if len(doc) > 1:
-                    documents.append((doc_id, r'>>{target_language}<< ' + doc))
+                    documents.append((doc_id, doc))
         
         return documents
 
@@ -78,18 +78,15 @@ def main():
     
     args = parser.parse_args()
    
-    if (os.path.exists(args.output_dir) and os.listdir(args.output_dir)):
-        raise ValueError(
-            f"Output directory ({args.output_dir}) already exists and is not empty. \
-                Use --overwrite_output_dir to overcome.")
-    else:
-        os.mkdir(args.output_dir)
+    
+    os.makedirs(args.output_dir, exist_ok=True)
 
     device    = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     tokenizer = MarianTokenizer.from_pretrained(args.model_name_or_path)
     model     = MarianMTModel.from_pretrained(args.model_name_or_path).to(device).eval()
 
-    output_file = args.output_dir + 'translated_' + args.input_file
+    os.makedirs(args.output_dir, exist_ok=True)
+    output_file = os.path.join(args.output_dir, 'translated_' + os.path.basename(args.input_file))
     train_ds = MSMarco(args.input_file, args.target_language)
     translation_loader = DataLoader(
             train_ds,
@@ -101,14 +98,18 @@ def main():
             doc_ids   = batch[0]
             documents = batch[1]
             
-            tokenized_text = tokenizer.prepare_seq2seq_batch(
-                documents, 
+            tokenized_text = tokenizer(
+                list(documents),
                 max_length=args.max_seq_length,
+                truncation=True,
+                padding=True,
                 return_tensors="pt")
+
 
             with torch.no_grad():
                 translated = model.generate(
-                    input_ids=tokenized_text['input_ids'].to(device), 
+                    input_ids=tokenized_text['input_ids'].to(device),
+                    attention_mask=tokenized_text['attention_mask'].to(device),
                     max_length=args.max_seq_length, 
                     num_beams=args.num_beams,
                     do_sample=False)
